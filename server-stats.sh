@@ -1,20 +1,31 @@
 #!/bin/bash
 
 printf "=========== SERVER STATS ===========\n\n"
+
+# Provide help
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    echo "Usage: ./server-stats.sh"
+    echo "Displays server hardware and usage statistics."
+    exit 0
+fi
+
+#Hardware info
 printf "\n---------- Server Hardware ----------\n\n"
 
 # CPU Name
+if ! [ -f /proc/cpuinfo ]; then
+    echo "Error: /proc/cpuinfo not found."
+    exit 1
+fi
 grep -m 1 'model name' /proc/cpuinfo | \
 awk -F": " '{printf "CPU: \t%s\n", $2}'
 
 # Disk Information
-df -h . | grep -vi size | \
-awk '{printf "Disk: \t%s\t| size: %s\n", $1, $2}'
+df -BG . | awk 'NR==2 {printf "Disk: \t%s | Total: %s | Used: %s\n", $1, $2, $3}'
 
 # Memory Information
-free -h | grep Mem | awk '{printf "Mem: \t%s", $2}'
+free -h | awk '/Mem:/ {printf "RAM: \t%s\n", $2}'
 
-echo ""
 printf "\n---------- CPU Usage ----------\n\n"
 
 # CPU Usage Calculation
@@ -41,13 +52,18 @@ diff_total=$((total2 - total1))
 usage=$((100 * (diff_total - diff_idle) / diff_total))
 free_cpu=$((100 - usage))
 
+# Alert CPU usage
+if [ "$usage" -gt 90 ]; then
+    echo "Warning: High CPU usage: $usage%"
+fi
 printf "\t%d%% | Free: %d%%\n" "$usage" "$free_cpu"
+
 
 printf "\n---------- Disk Usage ----------\n\n"
 
 # Disk Usage
-df -h . | grep -vi use | \
-awk '{printf "\t%.2f%% | Free: %.2f%%    (%s)\n", $3/$2 * 100, $4/$2 * 100, $1}'
+df -B1 . | awk 'NR==2 {used=$3; total=$2; free=total-used; printf "\t%.2f%% | Free: %.2f%%\n", used/total*100, free/total*100}'
+
 
 printf "\n---------- Memory Usage ----------\n\n"
 
@@ -57,9 +73,10 @@ awk '{printf "\t%.2f%% | Free: %.2f%%\n", $3/$2 * 100, $4/$2 * 100}'
 
 # Five CPU greediest processes
 printf "\n---------- Top 5 processes by CPU usage ----------\n"
-top -c -o=+"%CPU" -b -n 1 | awk '/^$/{flag=1} flag' | head -6 #| awk -F, '{print $3}'
+ps -eo comm,pid,user,%mem,%cpu --sort=-%cpu | \
+grep -v -x "ps" | head -6
 
 # Five Memory greediest processes
 printf "\n---------- Top 5 processes by Memory usage ----------\n"
-top -c -o=+"%MEM" -b -n 1 | awk '/^$/{flag=1} flag' | head -6 #| awk -F, '{print $3}'
-
+ps -eo comm,pid,user,%cpu,%mem --sort=-%mem | \
+grep -v -x "ps" | head -6
